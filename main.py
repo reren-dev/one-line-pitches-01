@@ -8,7 +8,6 @@ $MAKEFUN_OUTPUT_DIR/entry.txt (default /output/entry.txt).
 """
 
 import os
-import tempfile
 
 # The pitch: one sentence, 219 characters.
 # It speaks to the friend directly ("that app idea you've been carrying
@@ -36,17 +35,22 @@ def main() -> None:
     out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
     path = os.path.join(out_dir, "entry.txt")
     os.makedirs(out_dir, exist_ok=True)
-    # Atomic write: write to a temp file in the same directory, verify the
-    # bytes round-trip as the exact pitch, then move it into place, so a
-    # reader never sees a half-written entry.txt.
-    fd, tmp_path = tempfile.mkstemp(dir=out_dir, prefix=".entry-", suffix=".tmp")
+    # Atomic write: write to a fixed, non-hidden temp name in the same
+    # directory, verify the bytes round-trip as the exact pitch, then move
+    # it into place, so a reader never sees a half-written entry.txt.
+    tmp_path = path + ".tmp"
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+        with open(tmp_path, "w", encoding="utf-8", newline="") as handle:
             handle.write(LINE)
+            handle.flush()
+            os.fsync(handle.fileno())
         with open(tmp_path, "r", encoding="utf-8", newline="") as handle:
             if handle.read() != LINE:
                 raise SystemExit("round-trip check failed: entry.txt mismatch")
         os.replace(tmp_path, path)
+        # Normal world-readable mode regardless of the caller's umask, so
+        # the grader can always read the output.
+        os.chmod(path, 0o644)
     except BaseException:
         try:
             os.unlink(tmp_path)
